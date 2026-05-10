@@ -1,96 +1,205 @@
-// DESIGNMASK — 5ch servo controller for Arduino Pro Micro
+// DESIGNMASK - direct PWM test for one AGFRC linear actuator.
 //
-// Wiring (Pro Micro):
-//   Servo 1 signal -> D3
-//   Servo 2 signal -> D5
-//   Servo 3 signal -> D6
-//   Servo 4 signal -> D9
-//   Servo 5 signal -> D10
-//   All servo V+    -> Pro Micro VCC (5V)  *see note*
-//   All servo GND   -> Pro Micro GND       (must share ground)
+// Board: Adafruit ESP32 Feather V2 / HUZZAH32 ESP32 Feather V2
 //
-// Power note: 1.5g linear servos draw ~80–150mA each under light load.
-// Five of them off USB is borderline; if servos jitter or the Pro Micro
-// resets, run servo V+ from an external 5V supply and keep GND shared.
+// Wiring for this test:
+//   Actuator signal -> Feather D33 / GPIO33
+//   Actuator V+     -> servo power +
+//   Actuator GND    -> servo power GND and Feather GND
 //
-// Serial protocol (115200 baud):
-//   "S<idx>:<val>\n"   idx = 0..4, val = 0..180
-//   "C\n"              center all (val = 90)
-//   "?\n"              prints current positions
+// This sketch does not move on boot. It only outputs PWM after a command.
 
-#include <Servo.h>
+const uint8_t ACTUATOR_PIN = 33;      // D33 on the Feather
+const uint32_t PWM_HZ = 50;           // Standard servo rate
+const uint8_t PWM_BITS = 16;
+const uint32_t PWM_TOP = (1UL << PWM_BITS) - 1UL;
+const uint32_t PWM_PERIOD_US = 20000; // 50 Hz = 20 ms
 
-const uint8_t PINS[5] = {3, 5, 6, 9, 10};
-Servo servos[5];
-uint8_t pos[5] = {90, 90, 90, 90, 90};
+const int MIN_US = 1000;
+const int MAX_US = 2000;
+const int CENTER_US = 1500;
 
-char buf[24];
-uint8_t blen = 0;
+bool pwmActive = false;
+int currentPulseUs = CENTER_US;
 
-void applyAll() {
-  for (uint8_t i = 0; i < 5; i++) servos[i].write(pos[i]);
+char inputLine[48];
+uint8_t inputLength = 0;
+
+uint32_t pulseToDuty(int pulseUs) {
+  pulseUs = constrain(pulseUs, MIN_US, MAX_US);
+  return ((uint32_t)pulseUs * PWM_TOP) / PWM_PERIOD_US;
 }
 
-void reportPositions() {
-  Serial.print("P:");
-  for (uint8_t i = 0; i < 5; i++) {
-    Serial.print(pos[i]);
-    if (i < 4) Serial.print(',');
+int percentToPulse(int percent) {
+  percent = constrain(percent, 0, 100);
+  return map(percent, 0, 100, MIN_US, MAX_US);
+}
+
+int pulseToPercent(int pulseUs) {
+  pulseUs = constrain(pulseUs, MIN_US, MAX_US);
+  return map(pulseUs, MIN_US, MAX_US, 0, 100);
+}
+
+void startPwmIfNeeded() {
+  if (pwmActive) return;
+  if (!ledcAttach(ACTUATOR_PIN, PWM_HZ, PWM_BITS)) {
+    Serial.println("ERR ledcAttach failed");
+    return;
   }
+  pwmActive = true;
+}
+
+void writePulse(int pulseUs) {
+  currentPulseUs = constrain(pulseUs, MIN_US, MAX_US);
+  startPwmIfNeeded();
+  if (!pwmActive) return;
+  ledcWrite(ACTUATOR_PIN, pulseToDuty(currentPulseUs));
+}
+
+void stopPwm() {
+  if (!pwmActive) return;
+  ledcWrite(ACTUATOR_PIN, 0);
+  ledcDetach(ACTUATOR_PIN);
+  pinMode(ACTUATOR_PIN, INPUT);
+  pwmActive = false;
+}
+
+void printHelp() {
+  Serial.println();
+  Serial.println("DESIGNmask direct PWM actuator test");
+  Serial.println("Wire signal to D33 / GPIO33 only.");
+  Serial.println("Commands:");
+  Serial.println("  HELP       show commands");
+  Serial.println("  STATUS     show state");
+  Serial.println("  S p        set percent 0-100");
+  Serial.println("  US pulse   set pulse 1000-2000 microseconds");
+  Serial.println("  C          center at 1500us");
+  Serial.println("  TEST       slow jog: 1300us, 1700us, 1500us");
+  Serial.println("  D          stop PWM");
   Serial.println();
 }
 
-void handleLine() {
-  buf[blen] = '\0';
-  if (blen == 0) return;
+void printStatus() {
+  Serial.print("ACTUATOR pin=D33/GPIO33 pos=");
+  Serial.print(pulseToPercent(currentPulseUs));
+  Serial.print("% pulse=");
+  Serial.print(currentPulseUs);
+  Serial.print("us active=");
+  Serial.println(pwmActive ? "yes" : "no");
+}
 
-  if (buf[0] == 'S') {
-    char* colon = strchr(buf, ':');
-    if (!colon) return;
-    *colon = '\0';
-    int idx = atoi(buf + 1);
-    int val = atoi(colon + 1);
-    if (idx < 0 || idx > 4) return;
-    if (val < 0) val = 0;
-    if (val > 180) val = 180;
-    pos[idx] = (uint8_t)val;
-    servos[idx].write(pos[idx]);
-    Serial.print("OK ");
-    Serial.print(idx);
-    Serial.print(' ');
-    Serial.println(pos[idx]);
-  } else if (buf[0] == 'C') {
-    for (uint8_t i = 0; i < 5; i++) pos[i] = 90;
-    applyAll();
-    Serial.println("OK C");
-  } else if (buf[0] == '?') {
-    reportPositions();
+void normalizeLine(char* line) {
+  for (uint8_t i = 0; line[i] != '\0'; i++) {
+    if (line[i] == ':' || line[i] == ',' || line[i] == '=') {
+      line[i] = ' ';
+    } else {
+      line[i] = toupper(line[i]);
+    }
   }
+}
+
+void runTestJog() {
+  Serial.println("TEST 1300us");
+  writePulse(1300);
+  delay(1000);
+  Serial.println("TEST 1700us");
+  writePulse(1700);
+  delay(1000);
+  Serial.println("TEST 1500us");
+  writePulse(1500);
+  Serial.println("OK TEST");
+}
+
+void handleLine() {
+  inputLine[inputLength] = '\0';
+  normalizeLine(inputLine);
+
+  char* command = strtok(inputLine, " \t");
+  if (!command) return;
+
+  if (!strcmp(command, "HELP") || !strcmp(command, "?")) {
+    printHelp();
+    return;
+  }
+
+  if (!strcmp(command, "STATUS")) {
+    printStatus();
+    return;
+  }
+
+  if (!strcmp(command, "S")) {
+    char* first = strtok(nullptr, " \t");
+    char* second = strtok(nullptr, " \t");
+    if (!first) {
+      Serial.println("ERR usage: S p");
+      return;
+    }
+    int percent = second ? atoi(second) : atoi(first);
+    writePulse(percentToPulse(percent));
+    Serial.print("OK S ");
+    Serial.print(pulseToPercent(currentPulseUs));
+    Serial.print("% ");
+    Serial.print(currentPulseUs);
+    Serial.println("us");
+    return;
+  }
+
+  if (!strcmp(command, "US")) {
+    char* first = strtok(nullptr, " \t");
+    char* second = strtok(nullptr, " \t");
+    if (!first) {
+      Serial.println("ERR usage: US pulse");
+      return;
+    }
+    int pulseUs = second ? atoi(second) : atoi(first);
+    writePulse(pulseUs);
+    Serial.print("OK US ");
+    Serial.print(currentPulseUs);
+    Serial.println("us");
+    return;
+  }
+
+  if (!strcmp(command, "C")) {
+    writePulse(CENTER_US);
+    Serial.println("OK centered");
+    return;
+  }
+
+  if (!strcmp(command, "TEST")) {
+    runTestJog();
+    return;
+  }
+
+  if (!strcmp(command, "D")) {
+    stopPwm();
+    Serial.println("OK detached");
+    return;
+  }
+
+  Serial.println("ERR unknown command, type HELP");
 }
 
 void setup() {
   Serial.begin(115200);
-  for (uint8_t i = 0; i < 5; i++) {
-    servos[i].attach(PINS[i]);
-    servos[i].write(pos[i]);
-  }
-  // Pro Micro has native USB; wait briefly for host
-  delay(200);
-  Serial.println("READY");
+  delay(300);
+  pinMode(ACTUATOR_PIN, INPUT);
+  printHelp();
+  printStatus();
 }
 
 void loop() {
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
-      if (blen > 0) {
+      if (inputLength > 0) {
         handleLine();
-        blen = 0;
+        inputLength = 0;
       }
-    } else if (blen < sizeof(buf) - 1) {
-      buf[blen++] = c;
+    } else if (inputLength < sizeof(inputLine) - 1) {
+      inputLine[inputLength++] = c;
     } else {
-      blen = 0; // overflow guard
+      inputLength = 0;
+      Serial.println("ERR line too long");
     }
   }
 }

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DESIGNmask Actuator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #111;
+      background: #fff;
+    }
+    main {
+      width: min(780px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+    h1 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 650;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    section {
+      margin: 12px 0;
+      padding: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button, input {
+      font: inherit;
+    }
+    button {
+      min-height: 38px;
+      padding: 7px 12px;
+      margin: 4px 4px 4px 0;
+      color: #111;
+      background: #f7f7f7;
+      border: 1px solid #222;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:disabled {
+      color: #777;
+      border-color: #aaa;
+      cursor: default;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+    }
+    th, td {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: left;
+      vertical-align: top;
+    }
+    input[type="range"] {
+      width: 100%;
+    }
+    pre {
+      min-height: 140px;
+      max-height: 260px;
+      margin: 8px 0 0;
+      padding: 10px;
+      overflow: auto;
+      color: #111;
+      background: #f5f5f5;
+      border: 1px solid #d0d0d0;
+      border-radius: 4px;
+      white-space: pre-wrap;
+    }
+    .muted {
+      color: #555;
+      font-size: 14px;
+    }
+    .warn {
+      margin: 10px 0;
+      padding: 9px 10px;
+      border-left: 4px solid #b00020;
+      background: #fff5f5;
+    }
+    .step-nav, .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .control-row {
+      display: grid;
+      grid-template-columns: 112px 1fr 126px;
+      gap: 10px;
+      align-items: center;
+      min-height: 46px;
+      margin: 12px 0;
+    }
+    .status {
+      min-height: 20px;
+      margin: 8px 0 0;
+      color: #333;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 640px) {
+      main { padding: 14px; }
+      .control-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>DESIGNmask Linear Actuator</h1>
+  <div class="muted">Step <span id="step-number">1</span> of 3</div>
+
+  <section id="step-1">
+    <h2>1. Connect</h2>
+    <p>Plug in the Feather over USB-C, then connect here. Connecting does not move the actuator.</p>
+    <div class="top-actions">
+      <button id="connect">Connect serial</button>
+      <button id="disconnect" disabled>Disconnect</button>
+      <button id="status-button" disabled>Status</button>
+    </div>
+    <div class="muted">Use Chrome or Edge. Safari and Firefox usually do not expose USB Serial to web pages.</div>
+    <div class="status" id="status">Not connected.</div>
+  </section>
+
+  <section id="step-2" hidden>
+    <h2>2. Wire One Actuator</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Signal</th>
+          <th>Power</th>
+          <th>Ground</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>D33 / GPIO33 only</td>
+          <td>USB pin for light no-load testing, or external 3.7V-6.0V +</td>
+          <td>Common GND with Feather</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="warn">Only plug in one actuator for this test. Signal must be on D33 / GPIO33. If it shakes violently, remove actuator power and check power/common ground.</div>
+  </section>
+
+  <section id="step-3" hidden>
+    <h2>3. Control</h2>
+    <button id="center" disabled>Center</button>
+    <button id="test" disabled>Test jog</button>
+    <button id="detach" disabled>Stop pulses</button>
+    <div class="control-row">
+      <strong>Actuator</strong>
+      <input id="actuator-slider" type="range" min="0" max="100" value="50" disabled>
+      <span id="readout">50% / 1500us</span>
+    </div>
+    <div class="muted">Move slowly at first. The slider maps 0-100% to 1000-2000us.</div>
+  </section>
+
+  <div class="step-nav">
+    <button id="back" disabled>Back</button>
+    <button id="next">Next</button>
+  </div>
+
+  <section>
+    <h2>Serial Log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script>
+const encoder = new TextEncoder();
+
+let step = 1;
+let port = null;
+let reader = null;
+let writer = null;
+let readBuffer = '';
+let keepReading = false;
+let writeQueue = Promise.resolve();
+let sliderTimer = null;
+let actuatorPercent = 50;
+
+const connectButton = document.getElementById('connect');
+const disconnectButton = document.getElementById('disconnect');
+const statusButton = document.getElementById('status-button');
+const centerButton = document.getElementById('center');
+const testButton = document.getElementById('test');
+const detachButton = document.getElementById('detach');
+const slider = document.getElementById('actuator-slider');
+const readout = document.getElementById('readout');
+
+function setStatus(message) {
+  document.getElementById('status').textContent = message;
+}
+
+function appendLog(message, outgoing) {
+  const log = document.getElementById('log');
+  const prefix = outgoing ? '> ' : '< ';
+  log.textContent += prefix + message + '\n';
+  log.scrollTop = log.scrollHeight;
+}
+
+function pulseFor(percent) {
+  return 1000 + Math.round(Number(percent) * 10);
+}
+
+function updateReadout() {
+  slider.value = String(actuatorPercent);
+  readout.textContent = actuatorPercent + '% / ' + pulseFor(actuatorPercent) + 'us';
+}
+
+function setConnected(isConnected) {
+  connectButton.disabled = isConnected;
+  disconnectButton.disabled = !isConnected;
+  statusButton.disabled = !isConnected;
+  centerButton.disabled = !isConnected;
+  testButton.disabled = !isConnected;
+  detachButton.disabled = !isConnected;
+  slider.disabled = !isConnected;
+}
+
+function showStep(nextStep) {
+  step = Math.max(1, Math.min(3, nextStep));
+  document.getElementById('step-number').textContent = step;
+  document.getElementById('step-1').hidden = step !== 1;
+  document.getElementById('step-2').hidden = step !== 2;
+  document.getElementById('step-3').hidden = step !== 3;
+  document.getElementById('back').disabled = step === 1;
+  document.getElementById('next').disabled = step === 3;
+}
+
+async function sendCommand(command) {
+  if (!writer) {
+    setStatus('Connect serial first.');
+    return;
+  }
+  const line = command.trim();
+  appendLog(line, true);
+  writeQueue = writeQueue.then(() => writer.write(encoder.encode(line + '\n')));
+  await writeQueue;
+}
+
+function handleIncomingLine(line) {
+  if (!line.trim()) return;
+  appendLog(line, false);
+  const match = line.match(/^ACTUATOR\s+.*pos=([0-9]+)/i);
+  if (match) {
+    actuatorPercent = Math.max(0, Math.min(100, Number(match[1])));
+    updateReadout();
+  }
+}
+
+async function readLoop() {
+  const decoder = new TextDecoder();
+  keepReading = true;
+  while (port && port.readable && keepReading) {
+    reader = port.readable.getReader();
+    try {
+      while (keepReading) {
+        const result = await reader.read();
+        if (result.done) break;
+        readBuffer += decoder.decode(result.value, { stream: true });
+        const lines = readBuffer.split(/\r?\n/);
+        readBuffer = lines.pop();
+        lines.forEach(handleIncomingLine);
+      }
+    } catch (error) {
+      if (keepReading) setStatus('Read error: ' + error.message);
+    } finally {
+      reader.releaseLock();
+      reader = null;
+    }
+  }
+}
+
+async function connectSerial() {
+  if (!('serial' in navigator)) {
+    setStatus('Web Serial is not available in this browser. Use Chrome or Edge.');
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    setConnected(true);
+    setStatus('Connected.');
+    readLoop();
+    await sendCommand('STATUS');
+  } catch (error) {
+    port = null;
+    writer = null;
+    setConnected(false);
+    setStatus('Connect failed: ' + error.message);
+  }
+}
+
+async function disconnectSerial() {
+  keepReading = false;
+  try {
+    if (reader) await reader.cancel();
+    if (writer) {
+      writer.releaseLock();
+      writer = null;
+    }
+    if (port) await port.close();
+  } catch (error) {
+    setStatus('Disconnect error: ' + error.message);
+  } finally {
+    port = null;
+    setConnected(false);
+    setStatus('Disconnected.');
+  }
+}
+
+function queueActuatorMove(value) {
+  actuatorPercent = Number(value);
+  updateReadout();
+  clearTimeout(sliderTimer);
+  sliderTimer = setTimeout(() => {
+    sendCommand('S ' + actuatorPercent);
+  }, 100);
+}
+
+connectButton.onclick = connectSerial;
+disconnectButton.onclick = disconnectSerial;
+statusButton.onclick = () => sendCommand('STATUS');
+centerButton.onclick = async () => {
+  actuatorPercent = 50;
+  updateReadout();
+  await sendCommand('C');
+};
+testButton.onclick = () => sendCommand('TEST');
+detachButton.onclick = () => sendCommand('D');
+slider.oninput = () => queueActuatorMove(slider.value);
+document.getElementById('back').onclick = () => showStep(step - 1);
+document.getElementById('next').onclick = () => showStep(step + 1);
+
+showStep(1);
+updateReadout();
+setConnected(false);
+</script>
+</body>
+</html>
