@@ -27,13 +27,13 @@ Then open:
 http://localhost:5173
 ```
 
-Use Chrome or Edge. The page shows five vertical sliders and asks for the serial port on the first slider drag or animation preset.
+Use Chrome or Edge. The page shows five vertical sliders. Click `Connect ESP` to pick the board's serial port; dragging a slider or clicking an animation preset will also ask for the port if it is not connected yet.
 
 The five motor sliders represent five vertical mask columns for blind/scale effects. The preset controls run column animations: `Wave` loops a traveling wave, `Raise` slowly raises every column, `Slide` raises columns left-to-right, and `Stop` halts the active preset.
 
 The page also opens a small face tracking window for up to four people. It uses the browser camera plus MediaPipe FaceMesh, following the landmark, iris, blink, and gaze heuristics from [`arnaudlvq/Eye-Contact-RealTime-Detection`](https://github.com/arnaudlvq/Eye-Contact-RealTime-Detection). Allow camera access when the browser asks. The MediaPipe FaceMesh script is loaded from jsDelivr.
 
-The camera window is divided into five vertical sections matching the five mask columns. If a detected face is making eye contact in a section, that section's motor is raised to `0%`; sections without eye contact rest at `100%`. Browser serial access still has to be opened by a user gesture first, such as dragging a slider or clicking a preset.
+The camera window is divided into five vertical sections matching the five mask columns. If a detected face is making eye contact in a section, that section's motor is raised to `0%`; sections without eye contact rest at `100%`. Browser serial access still has to be opened by a user gesture first, such as clicking `Connect ESP`, dragging a slider, or clicking a preset.
 
 Touching or keyboard-adjusting the `ALL` bar enters manual override: all five columns are hard-assigned to that height and eye-contact motor updates are ignored until a preset or `Stop` is clicked.
 

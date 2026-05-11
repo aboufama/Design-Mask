@@ -136,6 +136,28 @@
       white-space: nowrap;
     }
 
+    .esp-connect {
+      position: fixed;
+      top: clamp(12px, 3vw, 24px);
+      left: clamp(12px, 3vw, 24px);
+      z-index: 4;
+      min-height: 32px;
+      padding: 6px 11px;
+      border: 1px solid #bdbdb6;
+      border-radius: 6px;
+      color: #2b2b28;
+      background: rgb(241 241 237 / 0.94);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .esp-connect:disabled {
+      cursor: default;
+      opacity: 0.62;
+    }
+
     .preset-controls {
       position: fixed;
       left: 50%;
@@ -180,6 +202,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
+<button type="button" class="esp-connect" id="esp-connect">Connect ESP</button>
+
 <section class="face-window" id="face-window" aria-label="Face tracking">
   <video id="face-video" muted playsinline></video>
   <canvas id="face-canvas" width="640" height="480"></canvas>
@@ -267,6 +291,7 @@ const sliders = Array.from(document.querySelectorAll('.slider')).map((element) =
   timer: null,
 }));
 const animationButtons = Array.from(document.querySelectorAll('[data-preset]'));
+const espConnectButton = document.getElementById('esp-connect');
 
 const faceWindow = document.getElementById('face-window');
 const faceVideo = document.getElementById('face-video');
@@ -589,6 +614,35 @@ function renderSlider(slider) {
   slider.element.setAttribute('aria-valuenow', String(slider.value));
 }
 
+function serialAvailable() {
+  return 'serial' in navigator;
+}
+
+function updateEspConnectButton() {
+  if (!espConnectButton) return;
+  const connected = Boolean(writer);
+  const isConnecting = Boolean(connecting);
+  espConnectButton.hidden = connected;
+  espConnectButton.disabled = isConnecting || !serialAvailable();
+  espConnectButton.textContent = isConnecting ? 'Connecting...' : 'Connect ESP';
+  espConnectButton.title = serialAvailable()
+    ? 'Connect ESP over USB serial'
+    : 'Use Chrome or Edge over HTTPS for Web Serial';
+}
+
+function clearSerialConnection() {
+  if (writer) {
+    try {
+      writer.releaseLock();
+    } catch (error) {
+      console.debug(error);
+    }
+  }
+  writer = null;
+  port = null;
+  updateEspConnectButton();
+}
+
 function valueFromPointer(slider, event) {
   const rect = slider.rail.getBoundingClientRect();
   const ratio = (event.clientY - rect.top) / rect.height;
@@ -620,10 +674,17 @@ async function readLoop() {
 }
 
 async function ensureConnected() {
-  if (writer) return true;
-  if (connecting) return connecting;
-  if (!('serial' in navigator)) {
+  if (writer) {
+    updateEspConnectButton();
+    return true;
+  }
+  if (connecting) {
+    updateEspConnectButton();
+    return connecting;
+  }
+  if (!serialAvailable()) {
     console.error('Web Serial is not available in this browser.');
+    updateEspConnectButton();
     return false;
   }
 
@@ -637,24 +698,27 @@ async function ensureConnected() {
     })
     .catch((error) => {
       console.error(error);
-      port = null;
-      writer = null;
+      clearSerialConnection();
       return false;
     })
     .finally(() => {
       connecting = null;
+      updateEspConnectButton();
     });
 
+  updateEspConnectButton();
   return connecting;
 }
 
 async function sendCommand(command) {
   if (!writer) return;
-  writeQueue = writeQueue.then(() => writer.write(encoder.encode(command + '\n')));
-  await writeQueue.catch((error) => {
-    console.error(error);
-    writer = null;
-  });
+  writeQueue = writeQueue
+    .then(() => writer.write(encoder.encode(command + '\n')))
+    .catch((error) => {
+      console.error(error);
+      clearSerialConnection();
+    });
+  await writeQueue;
 }
 
 function motorSliders() {
@@ -954,6 +1018,15 @@ animationButtons.forEach((button) => {
   });
 });
 
+espConnectButton.addEventListener('click', ensureConnected);
+
+if (serialAvailable()) {
+  navigator.serial.addEventListener('disconnect', (event) => {
+    if (!port || event.target === port) clearSerialConnection();
+  });
+}
+
+updateEspConnectButton();
 window.addEventListener('load', startFaceTracking);
 </script>
 </body>
