@@ -1,15 +1,21 @@
-// DESIGNMASK - direct PWM test for one AGFRC linear actuator.
+// DESIGNMASK - direct PWM control for five AGFRC linear actuators.
 //
 // Board: Adafruit ESP32 Feather V2 / HUZZAH32 ESP32 Feather V2
 //
-// Wiring for this test:
-//   Actuator signal -> Feather D33 / GPIO33
-//   Actuator V+     -> servo power +
-//   Actuator GND    -> servo power GND and Feather GND
+// Wiring:
+//   Motor 1 signal -> GPIO33
+//   Motor 2 signal -> GPIO32
+//   Motor 3 signal -> GPIO27
+//   Motor 4 signal -> GPIO12
+//   Motor 5 signal -> GPIO13
+//   Actuator V+    -> servo power +
+//   Actuator GND   -> servo power GND and Feather GND
 //
 // This sketch does not move on boot. It only outputs PWM after a command.
 
-const uint8_t ACTUATOR_PIN = 33;      // D33 on the Feather
+const uint8_t MOTOR_COUNT = 5;
+const uint8_t MOTOR_PINS[MOTOR_COUNT] = {33, 32, 27, 12, 13};
+
 const uint32_t PWM_HZ = 50;           // Standard servo rate
 const uint8_t PWM_BITS = 16;
 const uint32_t PWM_TOP = (1UL << PWM_BITS) - 1UL;
@@ -19,10 +25,10 @@ const int MIN_US = 1000;
 const int MAX_US = 2000;
 const int CENTER_US = 1500;
 
-bool pwmActive = false;
-int currentPulseUs = CENTER_US;
+bool pwmActive[MOTOR_COUNT] = {false, false, false, false, false};
+int currentPulseUs[MOTOR_COUNT] = {CENTER_US, CENTER_US, CENTER_US, CENTER_US, CENTER_US};
 
-char inputLine[48];
+char inputLine[64];
 uint8_t inputLength = 0;
 
 uint32_t pulseToDuty(int pulseUs) {
@@ -40,52 +46,77 @@ int pulseToPercent(int pulseUs) {
   return map(pulseUs, MIN_US, MAX_US, 0, 100);
 }
 
-void startPwmIfNeeded() {
-  if (pwmActive) return;
-  if (!ledcAttach(ACTUATOR_PIN, PWM_HZ, PWM_BITS)) {
-    Serial.println("ERR ledcAttach failed");
-    return;
+bool isValidMotor(uint8_t motorIndex) {
+  return motorIndex < MOTOR_COUNT;
+}
+
+bool startPwmIfNeeded(uint8_t motorIndex) {
+  if (!isValidMotor(motorIndex)) return false;
+  if (pwmActive[motorIndex]) return true;
+  if (!ledcAttach(MOTOR_PINS[motorIndex], PWM_HZ, PWM_BITS)) {
+    Serial.print("ERR ledcAttach failed motor=");
+    Serial.println(motorIndex + 1);
+    return false;
   }
-  pwmActive = true;
+  pwmActive[motorIndex] = true;
+  return true;
 }
 
-void writePulse(int pulseUs) {
-  currentPulseUs = constrain(pulseUs, MIN_US, MAX_US);
-  startPwmIfNeeded();
-  if (!pwmActive) return;
-  ledcWrite(ACTUATOR_PIN, pulseToDuty(currentPulseUs));
+void writePulse(uint8_t motorIndex, int pulseUs) {
+  if (!isValidMotor(motorIndex)) return;
+  currentPulseUs[motorIndex] = constrain(pulseUs, MIN_US, MAX_US);
+  if (!startPwmIfNeeded(motorIndex)) return;
+  ledcWrite(MOTOR_PINS[motorIndex], pulseToDuty(currentPulseUs[motorIndex]));
 }
 
-void stopPwm() {
-  if (!pwmActive) return;
-  ledcWrite(ACTUATOR_PIN, 0);
-  ledcDetach(ACTUATOR_PIN);
-  pinMode(ACTUATOR_PIN, INPUT);
-  pwmActive = false;
+void stopPwm(uint8_t motorIndex) {
+  if (!isValidMotor(motorIndex) || !pwmActive[motorIndex]) return;
+  ledcWrite(MOTOR_PINS[motorIndex], 0);
+  ledcDetach(MOTOR_PINS[motorIndex]);
+  pinMode(MOTOR_PINS[motorIndex], INPUT);
+  pwmActive[motorIndex] = false;
+}
+
+void stopAllPwm() {
+  for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+    stopPwm(i);
+  }
 }
 
 void printHelp() {
   Serial.println();
-  Serial.println("DESIGNmask direct PWM actuator test");
-  Serial.println("Wire signal to D33 / GPIO33 only.");
+  Serial.println("DESIGNmask five-motor PWM actuator control");
   Serial.println("Commands:");
-  Serial.println("  HELP       show commands");
-  Serial.println("  STATUS     show state");
-  Serial.println("  S p        set percent 0-100");
-  Serial.println("  US pulse   set pulse 1000-2000 microseconds");
-  Serial.println("  C          center at 1500us");
-  Serial.println("  TEST       slow jog: 1300us, 1700us, 1500us");
-  Serial.println("  D          stop PWM");
+  Serial.println("  HELP          show commands");
+  Serial.println("  STATUS        show all motor states");
+  Serial.println("  S p           set motor 1 percent 0-100");
+  Serial.println("  S m p         set motor m percent 0-100");
+  Serial.println("  US pulse      set motor 1 pulse 1000-2000 microseconds");
+  Serial.println("  US m pulse    set motor m pulse 1000-2000 microseconds");
+  Serial.println("  C             center all motors at 1500us");
+  Serial.println("  C m           center motor m at 1500us");
+  Serial.println("  D             stop PWM on all motors");
+  Serial.println("  D m           stop PWM on motor m");
   Serial.println();
 }
 
-void printStatus() {
-  Serial.print("ACTUATOR pin=D33/GPIO33 pos=");
-  Serial.print(pulseToPercent(currentPulseUs));
+void printMotorStatus(uint8_t motorIndex) {
+  Serial.print("ACTUATOR ");
+  Serial.print(motorIndex + 1);
+  Serial.print(" pin=GPIO");
+  Serial.print(MOTOR_PINS[motorIndex]);
+  Serial.print(" pos=");
+  Serial.print(pulseToPercent(currentPulseUs[motorIndex]));
   Serial.print("% pulse=");
-  Serial.print(currentPulseUs);
+  Serial.print(currentPulseUs[motorIndex]);
   Serial.print("us active=");
-  Serial.println(pwmActive ? "yes" : "no");
+  Serial.println(pwmActive[motorIndex] ? "yes" : "no");
+}
+
+void printStatus() {
+  for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+    printMotorStatus(i);
+  }
 }
 
 void normalizeLine(char* line) {
@@ -98,16 +129,34 @@ void normalizeLine(char* line) {
   }
 }
 
-void runTestJog() {
-  Serial.println("TEST 1300us");
-  writePulse(1300);
-  delay(1000);
-  Serial.println("TEST 1700us");
-  writePulse(1700);
-  delay(1000);
-  Serial.println("TEST 1500us");
-  writePulse(1500);
-  Serial.println("OK TEST");
+bool parseMotorToken(const char* token, uint8_t* motorIndex) {
+  if (!token) return false;
+  int motor = atoi(token);
+  if (motor < 1 || motor > MOTOR_COUNT) return false;
+  *motorIndex = motor - 1;
+  return true;
+}
+
+bool parseIndexedValue(char* first, char* second, uint8_t* motorIndex, int* value) {
+  if (!first) return false;
+  if (second) {
+    if (!parseMotorToken(first, motorIndex)) return false;
+    *value = atoi(second);
+    return true;
+  }
+  *motorIndex = 0;
+  *value = atoi(first);
+  return true;
+}
+
+void centerMotor(uint8_t motorIndex) {
+  writePulse(motorIndex, CENTER_US);
+}
+
+void centerAllMotors() {
+  for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+    centerMotor(i);
+  }
 }
 
 void handleLine() {
@@ -130,16 +179,19 @@ void handleLine() {
   if (!strcmp(command, "S")) {
     char* first = strtok(nullptr, " \t");
     char* second = strtok(nullptr, " \t");
-    if (!first) {
-      Serial.println("ERR usage: S p");
+    uint8_t motorIndex = 0;
+    int percent = 0;
+    if (!parseIndexedValue(first, second, &motorIndex, &percent)) {
+      Serial.println("ERR usage: S [motor] percent");
       return;
     }
-    int percent = second ? atoi(second) : atoi(first);
-    writePulse(percentToPulse(percent));
+    writePulse(motorIndex, percentToPulse(percent));
     Serial.print("OK S ");
-    Serial.print(pulseToPercent(currentPulseUs));
+    Serial.print(motorIndex + 1);
+    Serial.print(" ");
+    Serial.print(pulseToPercent(currentPulseUs[motorIndex]));
     Serial.print("% ");
-    Serial.print(currentPulseUs);
+    Serial.print(currentPulseUs[motorIndex]);
     Serial.println("us");
     return;
   }
@@ -147,32 +199,54 @@ void handleLine() {
   if (!strcmp(command, "US")) {
     char* first = strtok(nullptr, " \t");
     char* second = strtok(nullptr, " \t");
-    if (!first) {
-      Serial.println("ERR usage: US pulse");
+    uint8_t motorIndex = 0;
+    int pulseUs = 0;
+    if (!parseIndexedValue(first, second, &motorIndex, &pulseUs)) {
+      Serial.println("ERR usage: US [motor] pulse");
       return;
     }
-    int pulseUs = second ? atoi(second) : atoi(first);
-    writePulse(pulseUs);
+    writePulse(motorIndex, pulseUs);
     Serial.print("OK US ");
-    Serial.print(currentPulseUs);
+    Serial.print(motorIndex + 1);
+    Serial.print(" ");
+    Serial.print(currentPulseUs[motorIndex]);
     Serial.println("us");
     return;
   }
 
   if (!strcmp(command, "C")) {
-    writePulse(CENTER_US);
-    Serial.println("OK centered");
-    return;
-  }
-
-  if (!strcmp(command, "TEST")) {
-    runTestJog();
+    char* first = strtok(nullptr, " \t");
+    if (first) {
+      uint8_t motorIndex = 0;
+      if (!parseMotorToken(first, &motorIndex)) {
+        Serial.println("ERR usage: C [motor]");
+        return;
+      }
+      centerMotor(motorIndex);
+      Serial.print("OK centered ");
+      Serial.println(motorIndex + 1);
+      return;
+    }
+    centerAllMotors();
+    Serial.println("OK centered all");
     return;
   }
 
   if (!strcmp(command, "D")) {
-    stopPwm();
-    Serial.println("OK detached");
+    char* first = strtok(nullptr, " \t");
+    if (first) {
+      uint8_t motorIndex = 0;
+      if (!parseMotorToken(first, &motorIndex)) {
+        Serial.println("ERR usage: D [motor]");
+        return;
+      }
+      stopPwm(motorIndex);
+      Serial.print("OK detached ");
+      Serial.println(motorIndex + 1);
+      return;
+    }
+    stopAllPwm();
+    Serial.println("OK detached all");
     return;
   }
 
@@ -182,7 +256,9 @@ void handleLine() {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  pinMode(ACTUATOR_PIN, INPUT);
+  for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+    pinMode(MOTOR_PINS[i], INPUT);
+  }
   printHelp();
   printStatus();
 }

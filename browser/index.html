@@ -3,284 +3,615 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DESIGNmask Actuator</title>
+  <title>DESIGNmask</title>
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
     body {
+      min-height: 100%;
       margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #111;
-      background: #fff;
+      color: #1f1f1f;
+      background: #f8f8f6;
     }
+
+    .face-window {
+      position: fixed;
+      top: clamp(12px, 3vw, 24px);
+      right: clamp(12px, 3vw, 24px);
+      z-index: 2;
+      width: clamp(180px, 24vw, 300px);
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      border: 1px solid #c9c9c3;
+      border-radius: 8px;
+      background: #151515;
+      box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+    }
+
+    .face-window.tracking {
+      border-color: #8e958d;
+    }
+
+    .face-window.eye-contact {
+      border-color: #5b8c68;
+    }
+
+    #face-video {
+      display: none;
+    }
+
+    #face-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
     main {
-      width: min(780px, 100%);
-      margin: 0 auto;
-      padding: 18px;
+      width: min(100%, 760px);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(34px, 0.65fr) repeat(5, minmax(52px, 1fr));
+      align-items: center;
+      justify-items: center;
+      gap: clamp(12px, 4vw, 34px);
+      padding: clamp(18px, 5vw, 48px);
     }
-    h1 {
-      margin: 0 0 14px;
-      font-size: 24px;
-      line-height: 1.2;
-      font-weight: 650;
+
+    .channel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
     }
-    h2 {
-      margin: 0 0 10px;
-      font-size: 18px;
-      line-height: 1.25;
+
+    .slider {
+      --value: 50;
+      width: clamp(42px, 9vw, 58px);
+      height: min(72vh, 520px);
+      min-height: 260px;
+      position: relative;
+      border-radius: 7px;
+      background: #deded9;
+      box-shadow: inset 0 0 0 1px #c3c3bc;
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
     }
-    section {
-      margin: 12px 0;
-      padding: 14px;
-      border: 1px solid #ccc;
+
+    .slider.master {
+      width: clamp(28px, 6vw, 38px);
+      background: #ecece8;
+      box-shadow: inset 0 0 0 1px #d4d4ce;
+    }
+
+    .slider:focus-visible {
+      outline: 2px solid #1f1f1f;
+      outline-offset: 5px;
+    }
+
+    .slider.dragging {
+      cursor: grabbing;
+    }
+
+    .rail {
+      position: absolute;
+      inset: 38px 0;
+    }
+
+    .thumb {
+      position: absolute;
+      top: calc(var(--value) * 1%);
+      left: 6px;
+      right: 6px;
+      height: 34px;
+      transform: translateY(-50%);
       border-radius: 6px;
+      background: #202124;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
     }
-    button, input {
+
+    .slider.master .thumb {
+      left: 5px;
+      right: 5px;
+      height: 28px;
+      background: #787a75;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+    }
+
+    .pin {
+      min-height: 14px;
+      font-size: 11px;
+      line-height: 1.2;
+      color: #4a4a46;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .preset-controls {
+      position: fixed;
+      left: 50%;
+      bottom: clamp(12px, 3vw, 24px);
+      z-index: 3;
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid #d2d2cb;
+      border-radius: 8px;
+      background: rgb(248 248 246 / 0.9);
+      transform: translateX(-50%);
+    }
+
+    .preset-controls button {
+      min-width: 54px;
+      min-height: 30px;
+      padding: 5px 9px;
+      border: 1px solid #bdbdb6;
+      border-radius: 6px;
+      color: #2b2b28;
+      background: #f1f1ed;
       font: inherit;
-    }
-    button {
-      min-height: 38px;
-      padding: 7px 12px;
-      margin: 4px 4px 4px 0;
-      color: #111;
-      background: #f7f7f7;
-      border: 1px solid #222;
-      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1;
       cursor: pointer;
     }
-    button:disabled {
-      color: #777;
-      border-color: #aaa;
-      cursor: default;
+
+    .preset-controls button.active {
+      color: #f8f8f6;
+      border-color: #2b2b28;
+      background: #2b2b28;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 8px 0;
-    }
-    th, td {
-      padding: 8px;
-      border: 1px solid #ddd;
-      text-align: left;
-      vertical-align: top;
-    }
-    input[type="range"] {
-      width: 100%;
-    }
-    pre {
-      min-height: 140px;
-      max-height: 260px;
-      margin: 8px 0 0;
-      padding: 10px;
-      overflow: auto;
-      color: #111;
-      background: #f5f5f5;
-      border: 1px solid #d0d0d0;
-      border-radius: 4px;
-      white-space: pre-wrap;
-    }
-    .muted {
-      color: #555;
-      font-size: 14px;
-    }
-    .warn {
-      margin: 10px 0;
-      padding: 9px 10px;
-      border-left: 4px solid #b00020;
-      background: #fff5f5;
-    }
-    .step-nav, .top-actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-      margin: 12px 0;
-    }
-    .control-row {
-      display: grid;
-      grid-template-columns: 112px 1fr 126px;
-      gap: 10px;
-      align-items: center;
-      min-height: 46px;
-      margin: 12px 0;
-    }
-    .status {
-      min-height: 20px;
-      margin: 8px 0 0;
-      color: #333;
-    }
-    [hidden] {
-      display: none !important;
-    }
-    @media (max-width: 640px) {
-      main { padding: 14px; }
-      .control-row {
-        grid-template-columns: 1fr;
-        gap: 4px;
+
+    @media (max-width: 760px) {
+      .face-window {
+        position: fixed;
+        width: min(34vw, 170px);
       }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
+<section class="face-window" id="face-window" aria-label="Face tracking">
+  <video id="face-video" muted playsinline></video>
+  <canvas id="face-canvas" width="640" height="480"></canvas>
+</section>
+
 <main>
-  <h1>DESIGNmask Linear Actuator</h1>
-  <div class="muted">Step <span id="step-number">1</span> of 3</div>
-
-  <section id="step-1">
-    <h2>1. Connect</h2>
-    <p>Plug in the Feather over USB-C, then connect here. Connecting does not move the actuator.</p>
-    <div class="top-actions">
-      <button id="connect">Connect serial</button>
-      <button id="disconnect" disabled>Disconnect</button>
-      <button id="status-button" disabled>Status</button>
+  <div class="channel">
+    <div class="slider master" data-master="true" data-value="50" tabindex="0" role="slider" aria-label="All motors" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
     </div>
-    <div class="muted">Use Chrome or Edge. Safari and Firefox usually do not expose USB Serial to web pages.</div>
-    <div class="status" id="status">Not connected.</div>
-  </section>
-
-  <section id="step-2" hidden>
-    <h2>2. Wire One Actuator</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Signal</th>
-          <th>Power</th>
-          <th>Ground</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>D33 / GPIO33 only</td>
-          <td>USB pin for light no-load testing, or external 3.7V-6.0V +</td>
-          <td>Common GND with Feather</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="warn">Only plug in one actuator for this test. Signal must be on D33 / GPIO33. If it shakes violently, remove actuator power and check power/common ground.</div>
-  </section>
-
-  <section id="step-3" hidden>
-    <h2>3. Control</h2>
-    <button id="center" disabled>Center</button>
-    <button id="test" disabled>Test jog</button>
-    <button id="detach" disabled>Stop pulses</button>
-    <div class="control-row">
-      <strong>Actuator</strong>
-      <input id="actuator-slider" type="range" min="0" max="100" value="50" disabled>
-      <span id="readout">50% / 1500us</span>
-    </div>
-    <div class="muted">Move slowly at first. The slider maps 0-100% to 1000-2000us.</div>
-  </section>
-
-  <div class="step-nav">
-    <button id="back" disabled>Back</button>
-    <button id="next">Next</button>
+    <div class="pin">ALL</div>
   </div>
-
-  <section>
-    <h2>Serial Log</h2>
-    <pre id="log"></pre>
-  </section>
+  <div class="channel">
+    <div class="slider" data-motor="1" data-value="50" tabindex="0" role="slider" aria-label="GPIO33" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
+    </div>
+    <div class="pin">GPIO33</div>
+  </div>
+  <div class="channel">
+    <div class="slider" data-motor="2" data-value="50" tabindex="0" role="slider" aria-label="GPIO32" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
+    </div>
+    <div class="pin">GPIO32</div>
+  </div>
+  <div class="channel">
+    <div class="slider" data-motor="3" data-value="50" tabindex="0" role="slider" aria-label="GPIO27" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
+    </div>
+    <div class="pin">GPIO27</div>
+  </div>
+  <div class="channel">
+    <div class="slider" data-motor="4" data-value="50" tabindex="0" role="slider" aria-label="GPIO12" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
+    </div>
+    <div class="pin">GPIO12</div>
+  </div>
+  <div class="channel">
+    <div class="slider" data-motor="5" data-value="50" tabindex="0" role="slider" aria-label="GPIO13" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <div class="rail"><div class="thumb"></div></div>
+    </div>
+    <div class="pin">GPIO13</div>
+  </div>
 </main>
+
+<nav class="preset-controls" aria-label="Mask column animations">
+  <button type="button" data-preset="wave">Wave</button>
+  <button type="button" data-preset="raise">Raise</button>
+  <button type="button" data-preset="slide">Slide</button>
+  <button type="button" data-preset="stop">Stop</button>
+</nav>
 
 <script>
 const encoder = new TextEncoder();
 
-let step = 1;
 let port = null;
 let reader = null;
 let writer = null;
+let connecting = null;
 let readBuffer = '';
-let keepReading = false;
 let writeQueue = Promise.resolve();
-let sliderTimer = null;
-let actuatorPercent = 50;
 
-const connectButton = document.getElementById('connect');
-const disconnectButton = document.getElementById('disconnect');
-const statusButton = document.getElementById('status-button');
-const centerButton = document.getElementById('center');
-const testButton = document.getElementById('test');
-const detachButton = document.getElementById('detach');
-const slider = document.getElementById('actuator-slider');
-const readout = document.getElementById('readout');
+const MOTOR_COUNT = 5;
+const FACE_MESH_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/';
+const FACE_OUTLINE = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+const LEFT_EYE = [33, 160, 158, 133, 153, 144, 33];
+const RIGHT_EYE = [362, 385, 387, 263, 373, 380, 362];
+const LEFT_EAR = [33, 160, 158, 133, 153, 144];
+const RIGHT_EAR = [362, 385, 387, 263, 373, 380];
+const MAX_TRACKED_FACES = 4;
+const FACE_MATCH_DISTANCE = 0.18;
+const FACE_TRACK_TTL_MS = 1500;
+const ANIMATION_SEND_INTERVAL_MS = 35;
+const EYE_CONTACT_RAISED_VALUE = 0;
+const EYE_CONTACT_REST_VALUE = 100;
+const EYE_CONTACT_SEND_INTERVAL_MS = 70;
 
-function setStatus(message) {
-  document.getElementById('status').textContent = message;
+const sliders = Array.from(document.querySelectorAll('.slider')).map((element) => ({
+  element,
+  rail: element.querySelector('.rail'),
+  isMaster: element.dataset.master === 'true',
+  motor: element.dataset.motor ? Number(element.dataset.motor) : null,
+  value: Number(element.dataset.value),
+  dragging: false,
+  waitingForConnection: false,
+  timer: null,
+}));
+const animationButtons = Array.from(document.querySelectorAll('[data-preset]'));
+
+const faceWindow = document.getElementById('face-window');
+const faceVideo = document.getElementById('face-video');
+const faceCanvas = document.getElementById('face-canvas');
+const faceContext = faceCanvas.getContext('2d');
+let faceMesh = null;
+let nextFaceTrackId = 1;
+let faceTracks = [];
+let activeAnimation = null;
+let animationWaitingForConnection = false;
+let eyeContactColumns = null;
+let lastEyeContactValues = null;
+let lastEyeContactSendAt = 0;
+let masterOverrideActive = false;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
-function appendLog(message, outgoing) {
-  const log = document.getElementById('log');
-  const prefix = outgoing ? '> ' : '< ';
-  log.textContent += prefix + message + '\n';
-  log.scrollTop = log.scrollHeight;
+function roundPercent(value) {
+  return clamp(Math.round(value), 0, 100);
 }
 
-function pulseFor(percent) {
-  return 1000 + Math.round(Number(percent) * 10);
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
-function updateReadout() {
-  slider.value = String(actuatorPercent);
-  readout.textContent = actuatorPercent + '% / ' + pulseFor(actuatorPercent) + 'us';
+function easeOut(t) {
+  return 1 - Math.pow(1 - t, 3);
 }
 
-function setConnected(isConnected) {
-  connectButton.disabled = isConnected;
-  disconnectButton.disabled = !isConnected;
-  statusButton.disabled = !isConnected;
-  centerButton.disabled = !isConnected;
-  testButton.disabled = !isConnected;
-  detachButton.disabled = !isConnected;
-  slider.disabled = !isConnected;
+function distance2d(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function showStep(nextStep) {
-  step = Math.max(1, Math.min(3, nextStep));
-  document.getElementById('step-number').textContent = step;
-  document.getElementById('step-1').hidden = step !== 1;
-  document.getElementById('step-2').hidden = step !== 2;
-  document.getElementById('step-3').hidden = step !== 3;
-  document.getElementById('back').disabled = step === 1;
-  document.getElementById('next').disabled = step === 3;
+function faceCentroid(landmarks) {
+  const points = FACE_OUTLINE.map((index) => landmarks[index]).filter(Boolean);
+  return meanPoint(points.length ? points : landmarks);
 }
 
-async function sendCommand(command) {
-  if (!writer) {
-    setStatus('Connect serial first.');
+function getFaceTrack(landmarks, reservedTrackIds) {
+  const center = faceCentroid(landmarks);
+  let bestTrack = null;
+  let bestDistance = FACE_MATCH_DISTANCE;
+
+  faceTracks.forEach((track) => {
+    if (reservedTrackIds.has(track.id)) return;
+    const distance = distance2d(track.center, center);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestTrack = track;
+    }
+  });
+
+  if (!bestTrack) {
+    bestTrack = {
+      id: nextFaceTrackId++,
+      center,
+      baseline: null,
+      lastSeen: performance.now(),
+    };
+    faceTracks.push(bestTrack);
+  }
+
+  bestTrack.center = center;
+  bestTrack.lastSeen = performance.now();
+  reservedTrackIds.add(bestTrack.id);
+  return bestTrack;
+}
+
+function pruneFaceTracks(activeTrackIds) {
+  const now = performance.now();
+  faceTracks = faceTracks.filter((track) => {
+    return activeTrackIds.has(track.id) || now - track.lastSeen < FACE_TRACK_TTL_MS;
+  });
+}
+
+function normalize3d(vector) {
+  const length = Math.hypot(vector.x, vector.y, vector.z) || 1;
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+    z: vector.z / length,
+  };
+}
+
+function meanPoint(points) {
+  return points.reduce((total, point) => ({
+    x: total.x + point.x / points.length,
+    y: total.y + point.y / points.length,
+    z: total.z + point.z / points.length,
+  }), { x: 0, y: 0, z: 0 });
+}
+
+function gazeDirection(landmarks, irisIndex, eyeIndices) {
+  const iris = landmarks[irisIndex];
+  const eye = meanPoint(eyeIndices.map((index) => landmarks[index]));
+  return normalize3d({
+    x: iris.x - eye.x,
+    y: iris.y - eye.y,
+    z: iris.z - eye.z,
+  });
+}
+
+function eyeAspectRatio(points) {
+  const a = distance2d(points[1], points[5]);
+  const b = distance2d(points[2], points[4]);
+  const c = distance2d(points[0], points[3]) || 1;
+  return (a + b) / (2 * c);
+}
+
+function drawPath(points, color, width = 2) {
+  if (points.length < 2) return;
+  faceContext.beginPath();
+  faceContext.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach((point) => faceContext.lineTo(point.x, point.y));
+  faceContext.strokeStyle = color;
+  faceContext.lineWidth = width;
+  faceContext.stroke();
+}
+
+function drawCameraSections(activeColumns = new Set()) {
+  const sectionWidth = faceCanvas.width / MOTOR_COUNT;
+  faceContext.save();
+  for (let i = 0; i < MOTOR_COUNT; i++) {
+    if (activeColumns.has(i)) {
+      faceContext.fillStyle = 'rgb(119 200 141 / 0.12)';
+      faceContext.fillRect(i * sectionWidth, 0, sectionWidth, faceCanvas.height);
+    }
+    if (i > 0) {
+      faceContext.beginPath();
+      faceContext.moveTo(i * sectionWidth, 0);
+      faceContext.lineTo(i * sectionWidth, faceCanvas.height);
+      faceContext.strokeStyle = 'rgb(255 255 255 / 0.28)';
+      faceContext.lineWidth = 1;
+      faceContext.stroke();
+    }
+  }
+  faceContext.restore();
+}
+
+function drawNoFaceFrame() {
+  faceContext.fillStyle = '#151515';
+  faceContext.fillRect(0, 0, faceCanvas.width, faceCanvas.height);
+  faceContext.strokeStyle = '#2b2b2b';
+  faceContext.lineWidth = 2;
+  faceContext.beginPath();
+  faceContext.moveTo(0, faceCanvas.height);
+  faceContext.lineTo(faceCanvas.width, 0);
+  faceContext.stroke();
+  drawCameraSections();
+}
+
+function drawMirroredImage(image) {
+  faceContext.save();
+  faceContext.translate(faceCanvas.width, 0);
+  faceContext.scale(-1, 1);
+  faceContext.drawImage(image, 0, 0, faceCanvas.width, faceCanvas.height);
+  faceContext.restore();
+}
+
+function screenPoint(landmark) {
+  return {
+    x: (1 - landmark.x) * faceCanvas.width,
+    y: landmark.y * faceCanvas.height,
+  };
+}
+
+function faceColumnForBounds(minX, maxX) {
+  const centerX = (minX + maxX) / 2;
+  return clamp(Math.floor((centerX / faceCanvas.width) * MOTOR_COUNT), 0, MOTOR_COUNT - 1);
+}
+
+function drawTrackingOverlay(rawLandmarks, track) {
+  const points = rawLandmarks.map(screenPoint);
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const leftEar = eyeAspectRatio(LEFT_EAR.map((index) => rawLandmarks[index]));
+  const rightEar = eyeAspectRatio(RIGHT_EAR.map((index) => rawLandmarks[index]));
+  const blinking = ((leftEar + rightEar) / 2) < 0.18;
+
+  let gaze = { x: 0, y: 0, z: 0 };
+  if (rawLandmarks[468] && rawLandmarks[473]) {
+    const leftGaze = gazeDirection(rawLandmarks, 468, [33, 173]);
+    const rightGaze = gazeDirection(rawLandmarks, 473, [398, 263]);
+    gaze = {
+      x: (leftGaze.x + rightGaze.x) / 2,
+      y: (leftGaze.y + rightGaze.y) / 2 + 0.31,
+      z: (leftGaze.z + rightGaze.z) / 2,
+    };
+  }
+
+  const leftEye = rawLandmarks[33];
+  const rightEye = rawLandmarks[263];
+  const nose = rawLandmarks[1];
+  const eyeWidth = Math.abs(rightEye.x - leftEye.x) || 1;
+  const yaw = (nose.x - ((leftEye.x + rightEye.x) / 2)) / eyeWidth;
+  const pitch = (nose.y - ((leftEye.y + rightEye.y) / 2)) / eyeWidth;
+
+  if (!track.baseline) track.baseline = { yaw, pitch };
+  const adjustedYaw = yaw - track.baseline.yaw;
+  const adjustedPitch = pitch - track.baseline.pitch;
+  const gazeForward = Math.abs(gaze.x) <= 0.27 && Math.abs(gaze.y) <= 0.25;
+  const headForward = Math.abs(adjustedYaw) <= 0.12 && Math.abs(adjustedPitch) <= 0.14;
+  const eyeContact = !blinking && (
+    (headForward && gazeForward) ||
+    (adjustedYaw > 0.05 && gaze.x < -0.2) ||
+    (adjustedYaw < -0.05 && gaze.x > 0.2) ||
+    (adjustedPitch > 0.08 && gaze.y < -0.14) ||
+    (adjustedPitch < -0.08 && gaze.y > 0.14)
+  );
+
+  faceContext.save();
+  faceContext.globalAlpha = 0.86;
+  drawPath(FACE_OUTLINE.map((index) => points[index]), eyeContact ? '#77c88d' : '#e8e8e2', 2);
+  drawPath(LEFT_EYE.map((index) => points[index]), '#e8e8e2', 2);
+  drawPath(RIGHT_EYE.map((index) => points[index]), '#e8e8e2', 2);
+
+  faceContext.strokeStyle = eyeContact ? '#77c88d' : '#f2f2ed';
+  faceContext.lineWidth = 2;
+  faceContext.strokeRect(minX, minY, maxX - minX, maxY - minY);
+
+  const nosePoint = screenPoint(rawLandmarks[4]);
+  const arrowLength = 110;
+  faceContext.beginPath();
+  faceContext.moveTo(nosePoint.x, nosePoint.y);
+  faceContext.lineTo(nosePoint.x - gaze.x * arrowLength, nosePoint.y + gaze.y * arrowLength);
+  faceContext.strokeStyle = blinking ? '#b8b8b2' : '#ff6257';
+  faceContext.lineWidth = 3;
+  faceContext.stroke();
+
+  faceContext.beginPath();
+  faceContext.arc(nosePoint.x, nosePoint.y, 4, 0, Math.PI * 2);
+  faceContext.fillStyle = '#ff6257';
+  faceContext.fill();
+  faceContext.restore();
+  return {
+    column: faceColumnForBounds(minX, maxX),
+    eyeContact,
+  };
+}
+
+function handleFaceResults(results) {
+  if (results.image) {
+    drawMirroredImage(results.image);
+  } else {
+    drawNoFaceFrame();
+  }
+
+  const faces = (results.multiFaceLandmarks ?? []).slice(0, MAX_TRACKED_FACES);
+  const activeTrackIds = new Set();
+  let anyEyeContact = false;
+  const nextEyeContactColumns = new Set();
+
+  faceWindow.classList.toggle('tracking', faces.length > 0);
+  faceWindow.classList.toggle('eye-contact', false);
+  faces.forEach((landmarks) => {
+    const track = getFaceTrack(landmarks, activeTrackIds);
+    const result = drawTrackingOverlay(landmarks, track);
+    if (result.eyeContact) {
+      anyEyeContact = true;
+      nextEyeContactColumns.add(result.column);
+    }
+  });
+  pruneFaceTracks(activeTrackIds);
+  drawCameraSections(nextEyeContactColumns);
+  faceWindow.classList.toggle('eye-contact', anyEyeContact);
+  applyEyeContactColumns(nextEyeContactColumns);
+}
+
+async function runFaceLoop() {
+  if (!faceMesh || faceVideo.readyState < 2) {
+    requestAnimationFrame(runFaceLoop);
     return;
   }
-  const line = command.trim();
-  appendLog(line, true);
-  writeQueue = writeQueue.then(() => writer.write(encoder.encode(line + '\n')));
-  await writeQueue;
+  await faceMesh.send({ image: faceVideo });
+  requestAnimationFrame(runFaceLoop);
 }
 
-function handleIncomingLine(line) {
-  if (!line.trim()) return;
-  appendLog(line, false);
-  const match = line.match(/^ACTUATOR\s+.*pos=([0-9]+)/i);
-  if (match) {
-    actuatorPercent = Math.max(0, Math.min(100, Number(match[1])));
-    updateReadout();
+async function startFaceTracking() {
+  drawNoFaceFrame();
+  if (!window.FaceMesh || !navigator.mediaDevices?.getUserMedia) return;
+
+  faceMesh = new FaceMesh({
+    locateFile: (file) => FACE_MESH_CDN + file,
+  });
+  faceMesh.setOptions({
+    maxNumFaces: MAX_TRACKED_FACES,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+  faceMesh.onResults(handleFaceResults);
+
+  try {
+    faceVideo.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user',
+      },
+      audio: false,
+    });
+    await faceVideo.play();
+    runFaceLoop();
+  } catch (error) {
+    console.error(error);
+    drawNoFaceFrame();
   }
+}
+
+function renderSlider(slider) {
+  slider.element.style.setProperty('--value', slider.value);
+  slider.element.dataset.value = String(slider.value);
+  slider.element.setAttribute('aria-valuenow', String(slider.value));
+}
+
+function valueFromPointer(slider, event) {
+  const rect = slider.rail.getBoundingClientRect();
+  const ratio = (event.clientY - rect.top) / rect.height;
+  return clamp(Math.round(ratio * 100), 0, 100);
 }
 
 async function readLoop() {
   const decoder = new TextDecoder();
-  keepReading = true;
-  while (port && port.readable && keepReading) {
+  while (port && port.readable) {
     reader = port.readable.getReader();
     try {
-      while (keepReading) {
+      while (true) {
         const result = await reader.read();
         if (result.done) break;
         readBuffer += decoder.decode(result.value, { stream: true });
         const lines = readBuffer.split(/\r?\n/);
         readBuffer = lines.pop();
-        lines.forEach(handleIncomingLine);
+        lines.forEach((line) => {
+          if (line.trim()) console.debug(line);
+        });
       }
     } catch (error) {
-      if (keepReading) setStatus('Read error: ' + error.message);
+      console.debug(error);
     } finally {
       reader.releaseLock();
       reader = null;
@@ -288,71 +619,342 @@ async function readLoop() {
   }
 }
 
-async function connectSerial() {
+async function ensureConnected() {
+  if (writer) return true;
+  if (connecting) return connecting;
   if (!('serial' in navigator)) {
-    setStatus('Web Serial is not available in this browser. Use Chrome or Edge.');
+    console.error('Web Serial is not available in this browser.');
+    return false;
+  }
+
+  connecting = navigator.serial.requestPort()
+    .then(async (nextPort) => {
+      port = nextPort;
+      await port.open({ baudRate: 115200 });
+      writer = port.writable.getWriter();
+      readLoop();
+      return true;
+    })
+    .catch((error) => {
+      console.error(error);
+      port = null;
+      writer = null;
+      return false;
+    })
+    .finally(() => {
+      connecting = null;
+    });
+
+  return connecting;
+}
+
+async function sendCommand(command) {
+  if (!writer) return;
+  writeQueue = writeQueue.then(() => writer.write(encoder.encode(command + '\n')));
+  await writeQueue.catch((error) => {
+    console.error(error);
+    writer = null;
+  });
+}
+
+function motorSliders() {
+  return sliders.filter((slider) => !slider.isMaster);
+}
+
+function masterSlider() {
+  return sliders.find((slider) => slider.isMaster);
+}
+
+function getMotorValues() {
+  return motorSliders().map((slider) => slider.value);
+}
+
+function renderMasterFromMotors() {
+  const master = masterSlider();
+  if (!master) return;
+  const values = getMotorValues();
+  master.value = roundPercent(values.reduce((sum, value) => sum + value, 0) / values.length);
+  renderSlider(master);
+}
+
+function renderMotorValues(values) {
+  motorSliders().forEach((slider, index) => {
+    slider.value = roundPercent(values[index]);
+    renderSlider(slider);
+  });
+  renderMasterFromMotors();
+}
+
+function sendMotorValues(values) {
+  if (!writer) {
+    if (!animationWaitingForConnection) {
+      animationWaitingForConnection = true;
+      ensureConnected().then((connected) => {
+        animationWaitingForConnection = false;
+        if (connected) sendMotorValues(getMotorValues());
+      });
+    }
     return;
   }
-  try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
-    writer = port.writable.getWriter();
-    setConnected(true);
-    setStatus('Connected.');
-    readLoop();
-    await sendCommand('STATUS');
-  } catch (error) {
-    port = null;
-    writer = null;
-    setConnected(false);
-    setStatus('Connect failed: ' + error.message);
+
+  values
+    .map(roundPercent)
+    .forEach((value, index) => sendCommand(`S ${index + 1} ${value}`));
+}
+
+function setEquals(a, b) {
+  if (!a || !b) return a === b;
+  if (a.size !== b.size) return false;
+  for (const item of a) {
+    if (!b.has(item)) return false;
+  }
+  return true;
+}
+
+function enableMasterOverride() {
+  masterOverrideActive = true;
+  eyeContactColumns = null;
+  lastEyeContactValues = null;
+}
+
+function clearMasterOverride() {
+  masterOverrideActive = false;
+  eyeContactColumns = null;
+  lastEyeContactValues = null;
+}
+
+function applyEyeContactColumns(nextColumns) {
+  const values = Array.from({ length: MOTOR_COUNT }, (_, index) => {
+    return nextColumns.has(index) ? EYE_CONTACT_RAISED_VALUE : EYE_CONTACT_REST_VALUE;
+  });
+  const now = performance.now();
+  const changedColumns = !setEquals(eyeContactColumns, nextColumns);
+  const changedValues = !lastEyeContactValues ||
+    values.some((value, index) => value !== lastEyeContactValues[index]);
+
+  if (activeAnimation || masterOverrideActive) {
+    eyeContactColumns = new Set(nextColumns);
+    return;
+  }
+
+  if (changedColumns) {
+    eyeContactColumns = new Set(nextColumns);
+    renderMotorValues(values);
+  }
+
+  if (!writer) return;
+  if (changedValues || now - lastEyeContactSendAt >= EYE_CONTACT_SEND_INTERVAL_MS) {
+    sendMotorValues(values);
+    lastEyeContactValues = values;
+    lastEyeContactSendAt = now;
   }
 }
 
-async function disconnectSerial() {
-  keepReading = false;
-  try {
-    if (reader) await reader.cancel();
-    if (writer) {
-      writer.releaseLock();
-      writer = null;
+function updateAnimationButtons(activeName) {
+  animationButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.preset === activeName);
+  });
+}
+
+function stopAnimation() {
+  if (activeAnimation?.frameId) {
+    cancelAnimationFrame(activeAnimation.frameId);
+  }
+  activeAnimation = null;
+  updateAnimationButtons(null);
+}
+
+function finishAnimation() {
+  activeAnimation = null;
+  updateAnimationButtons(null);
+}
+
+function animationFrameValues(animation, elapsed) {
+  const columnCount = MOTOR_COUNT;
+  if (animation.name === 'wave') {
+    const phase = elapsed / 215;
+    return {
+      done: false,
+      values: Array.from({ length: columnCount }, (_, index) => {
+        return 50 + Math.sin(phase - index * 0.9) * 42;
+      }),
+    };
+  }
+
+  if (animation.name === 'raise') {
+    const progress = clamp(elapsed / 3100, 0, 1);
+    const amount = easeOut(progress);
+    return {
+      done: progress >= 1,
+      values: animation.initialValues.map((value) => value * (1 - amount)),
+    };
+  }
+
+  const staggerMs = 260;
+  const slideMs = 1150;
+  const doneAt = slideMs + staggerMs * (columnCount - 1);
+  return {
+    done: elapsed >= doneAt,
+    values: animation.initialValues.map((value, index) => {
+      const progress = clamp((elapsed - index * staggerMs) / slideMs, 0, 1);
+      return value * (1 - easeInOut(progress));
+    }),
+  };
+}
+
+function runAnimationFrame(now) {
+  if (!activeAnimation) return;
+  const elapsed = now - activeAnimation.startedAt;
+  const frame = animationFrameValues(activeAnimation, elapsed);
+  const roundedValues = frame.values.map(roundPercent);
+
+  renderMotorValues(roundedValues);
+
+  const changed = !activeAnimation.lastSentValues ||
+    roundedValues.some((value, index) => value !== activeAnimation.lastSentValues[index]);
+  if (changed && (now - activeAnimation.lastSendAt >= ANIMATION_SEND_INTERVAL_MS || frame.done)) {
+    sendMotorValues(roundedValues);
+    activeAnimation.lastSendAt = now;
+    activeAnimation.lastSentValues = roundedValues;
+  }
+
+  if (frame.done) {
+    finishAnimation();
+    return;
+  }
+
+  activeAnimation.frameId = requestAnimationFrame(runAnimationFrame);
+}
+
+function startAnimation(name) {
+  if (name === 'stop') {
+    stopAnimation();
+    clearMasterOverride();
+    return;
+  }
+
+  clearMasterOverride();
+  stopAnimation();
+  const now = performance.now();
+  activeAnimation = {
+    name,
+    startedAt: now,
+    initialValues: getMotorValues(),
+    lastSendAt: 0,
+    lastSentValues: null,
+    frameId: null,
+  };
+  updateAnimationButtons(name);
+  ensureConnected();
+  runAnimationFrame(now);
+}
+
+function commandForSlider(slider) {
+  if (!slider.isMaster) return [`S ${slider.motor} ${slider.value}`];
+  return Array.from({ length: MOTOR_COUNT }, (_, index) => `S ${index + 1} ${slider.value}`);
+}
+
+function sendSliderValue(slider, immediate = false) {
+  if (!writer) {
+    if (!slider.waitingForConnection) {
+      slider.waitingForConnection = true;
+      ensureConnected().then((connected) => {
+        slider.waitingForConnection = false;
+        if (connected) commandForSlider(slider).forEach(sendCommand);
+      });
     }
-    if (port) await port.close();
-  } catch (error) {
-    setStatus('Disconnect error: ' + error.message);
-  } finally {
-    port = null;
-    setConnected(false);
-    setStatus('Disconnected.');
+    return;
   }
+
+  clearTimeout(slider.timer);
+  if (immediate) {
+    commandForSlider(slider).forEach(sendCommand);
+    return;
+  }
+  slider.timer = setTimeout(() => {
+    commandForSlider(slider).forEach(sendCommand);
+  }, 35);
 }
 
-function queueActuatorMove(value) {
-  actuatorPercent = Number(value);
-  updateReadout();
-  clearTimeout(sliderTimer);
-  sliderTimer = setTimeout(() => {
-    sendCommand('S ' + actuatorPercent);
-  }, 100);
+function setSliderValue(slider, value, immediate = false) {
+  slider.value = clamp(value, 0, 100);
+  renderSlider(slider);
+  if (slider.isMaster) {
+    sliders
+      .filter((nextSlider) => !nextSlider.isMaster)
+      .forEach((nextSlider) => {
+        nextSlider.value = slider.value;
+        renderSlider(nextSlider);
+      });
+  } else {
+    renderMasterFromMotors();
+  }
+  sendSliderValue(slider, immediate);
 }
 
-connectButton.onclick = connectSerial;
-disconnectButton.onclick = disconnectSerial;
-statusButton.onclick = () => sendCommand('STATUS');
-centerButton.onclick = async () => {
-  actuatorPercent = 50;
-  updateReadout();
-  await sendCommand('C');
-};
-testButton.onclick = () => sendCommand('TEST');
-detachButton.onclick = () => sendCommand('D');
-slider.oninput = () => queueActuatorMove(slider.value);
-document.getElementById('back').onclick = () => showStep(step - 1);
-document.getElementById('next').onclick = () => showStep(step + 1);
+sliders.forEach((slider) => {
+  renderSlider(slider);
 
-showStep(1);
-updateReadout();
-setConnected(false);
+  slider.element.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    stopAnimation();
+    if (slider.isMaster) enableMasterOverride();
+    slider.dragging = true;
+    slider.element.classList.add('dragging');
+    slider.element.setPointerCapture(event.pointerId);
+    setSliderValue(slider, valueFromPointer(slider, event), true);
+  });
+
+  slider.element.addEventListener('pointermove', (event) => {
+    if (!slider.dragging) return;
+    setSliderValue(slider, valueFromPointer(slider, event));
+  });
+
+  const stopDrag = (event) => {
+    if (!slider.dragging) return;
+    slider.dragging = false;
+    slider.element.classList.remove('dragging');
+    if (event.type === 'pointerup') {
+      setSliderValue(slider, valueFromPointer(slider, event), true);
+    }
+  };
+
+  slider.element.addEventListener('pointerup', stopDrag);
+  slider.element.addEventListener('pointercancel', stopDrag);
+
+  slider.element.addEventListener('keydown', (event) => {
+    const step = event.shiftKey ? 10 : 1;
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      stopAnimation();
+      if (slider.isMaster) enableMasterOverride();
+      setSliderValue(slider, slider.value - step, true);
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      stopAnimation();
+      if (slider.isMaster) enableMasterOverride();
+      setSliderValue(slider, slider.value + step, true);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      stopAnimation();
+      if (slider.isMaster) enableMasterOverride();
+      setSliderValue(slider, 0, true);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      stopAnimation();
+      if (slider.isMaster) enableMasterOverride();
+      setSliderValue(slider, 100, true);
+    }
+  });
+});
+
+animationButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    startAnimation(button.dataset.preset);
+  });
+});
+
+window.addEventListener('load', startFaceTracking);
 </script>
 </body>
 </html>

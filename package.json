@@ -1,0 +1,10 @@
+{
+  "name": "designmask-controller",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 5173 --directory browser",
+    "build": "rm -rf dist && mkdir -p dist && cp -R browser/. dist/",
+    "preview": "python3 -m http.server 5173 --directory dist"
+  }
+}

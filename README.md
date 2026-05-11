@@ -1,16 +1,15 @@
 # DESIGNmask ESP32 Linear Actuator Controller
 
-Simple Arduino sketch for an Adafruit ESP32 Feather V2 / HUZZAH32 ESP32 Feather V2 driving one AGFRC C1.5CLS 1.5g linear actuator over USB Serial.
+Arduino firmware and a minimal browser controller for an Adafruit ESP32 Feather V2 / HUZZAH32 ESP32 Feather V2 driving five AGFRC C1.5CLS 1.5g linear actuators over USB Serial.
 
-The firmware starts with the actuator detached. It does not move on boot. It only sends pulses after a serial command or browser slider movement.
+The firmware starts with every actuator detached. It does not move on boot. It only sends pulses after a serial command or browser slider movement.
 
 ## Upload
 
 1. Open `arduino/servo_controller/servo_controller.ino` in Arduino IDE.
 2. Install board support: `esp32` by Espressif Systems.
-3. Install library: `ESP32Servo`.
-4. Select board: `Adafruit ESP32 Feather V2`.
-5. Upload over USB-C.
+3. Select board: `Adafruit ESP32 Feather V2`.
+4. Upload over USB-C.
 
 If upload fails after connecting to the ESP32, set upload speed to `115200`. That was the reliable flash speed for the board tested here.
 
@@ -28,7 +27,30 @@ Then open:
 http://localhost:5173
 ```
 
-Use Chrome or Edge, click `Connect serial`, choose the Feather, then use the single actuator slider.
+Use Chrome or Edge. The page shows five vertical sliders and asks for the serial port on the first slider drag or animation preset.
+
+The five motor sliders represent five vertical mask columns for blind/scale effects. The preset controls run column animations: `Wave` loops a traveling wave, `Raise` slowly raises every column, `Slide` raises columns left-to-right, and `Stop` halts the active preset.
+
+The page also opens a small face tracking window for up to four people. It uses the browser camera plus MediaPipe FaceMesh, following the landmark, iris, blink, and gaze heuristics from [`arnaudlvq/Eye-Contact-RealTime-Detection`](https://github.com/arnaudlvq/Eye-Contact-RealTime-Detection). Allow camera access when the browser asks. The MediaPipe FaceMesh script is loaded from jsDelivr.
+
+The camera window is divided into five vertical sections matching the five mask columns. If a detected face is making eye contact in a section, that section's motor is raised to `0%`; sections without eye contact rest at `100%`. Browser serial access still has to be opened by a user gesture first, such as dragging a slider or clicking a preset.
+
+Touching or keyboard-adjusting the `ALL` bar enters manual override: all five columns are hard-assigned to that height and eye-contact motor updates are ignored until a preset or `Stop` is clicked.
+
+## Deploy To Vercel
+
+This repo is configured for Vercel as a static site. Vercel runs `npm run build`, which copies only `browser/` into `dist/`, then serves `dist/`.
+
+Project settings:
+
+| Setting | Value |
+| --- | --- |
+| Framework Preset | `Other` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Install Command | leave default |
+
+Vercel serves over HTTPS, which is required for camera access and Web Serial in Chrome/Edge. The deployed page still loads MediaPipe FaceMesh from jsDelivr.
 
 ## Serial Settings
 
@@ -40,24 +62,28 @@ Use Chrome or Edge, click `Connect serial`, choose the Feather, then use the sin
 | Command | Meaning |
 | --- | --- |
 | `HELP` | Show commands |
-| `STATUS` | Show actuator state |
-| `S 50` | Move actuator to 50 percent |
-| `S 1 50` | Same as `S 50`, accepted for browser compatibility |
-| `US 1500` | Move actuator to 1500 microseconds |
-| `C` | Center at 1500 microseconds |
-| `TEST` | Slow jog: 1300us, 1700us, 1500us |
-| `D` | Detach actuator / stop pulses |
+| `STATUS` | Show all actuator states |
+| `S 50` | Move motor 1 to 50 percent |
+| `S 3 50` | Move motor 3 to 50 percent |
+| `US 1500` | Move motor 1 to 1500 microseconds |
+| `US 3 1500` | Move motor 3 to 1500 microseconds |
+| `C` | Center all motors at 1500 microseconds |
+| `C 3` | Center motor 3 at 1500 microseconds |
+| `D` | Detach all motors / stop pulses |
+| `D 3` | Detach motor 3 / stop pulses |
 
-The slider maps `0-100%` to `1000-2000us`.
+The sliders map `0-100%` to `1000-2000us`.
 
 ## Wiring
 
-| Actuator wire | Connect to |
+| Motor | Signal pin |
 | --- | --- |
-| Signal | Feather `D33 / GPIO33` only |
-| V+ | Feather `USB` pin for light no-load testing, or external `3.7V-6.0V` + |
-| GND | Feather GND and servo supply GND |
+| 1 | Feather `D33 / GPIO33` |
+| 2 | Feather `GPIO32` |
+| 3 | Feather `GPIO27` |
+| 4 | Feather `GPIO12` |
+| 5 | Feather `GPIO13` |
 
-Servo power is separate from serial. Serial sends commands only. Only plug in one actuator.
+All actuators need a shared ground with the Feather. Servo power is separate from serial. Serial sends commands only. For five actuators, prefer an external `3.7V-6.0V` servo supply instead of powering all actuators from the Feather `USB` pin.
 
-Violent shaking is not normal. If it happens, remove actuator power, use only one actuator, check common ground, avoid mechanical binding, and prefer a separate servo supply over the Feather `USB` pin.
+Violent shaking is not normal. If it happens, remove actuator power, check common ground, avoid mechanical binding, and use a separate servo supply.
